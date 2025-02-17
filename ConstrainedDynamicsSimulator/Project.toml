@@ -1,0 +1,12 @@
+name = "ConstrainedDynamicsSimulator"
+uuid = "c57ba902-cf0d-4687-8605-981b463e8666"
+authors = ["Dominic <dom.phillips97@gmail.com>"]
+version = "0.1.0"
+
+[deps]
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+Molly = "aa0f7f06-fcc0-5ec4-a7f3-a573f33f9c4c"
+
+[compat]
+ForwardDiff = "0.10.38"
+Molly = "0.22.0"
