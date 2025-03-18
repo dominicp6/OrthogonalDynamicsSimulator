@@ -1,3 +1,4 @@
+using Revise
 using Molly
 using Unitful
 using ConstrainedDynamicsSimulator
@@ -7,18 +8,13 @@ ff = MolecularForceField(joinpath.(ff_dir, ["ff99SBildn.xml", "tip3p_standard.xm
 sys = System("dipeptide_nowater.pdb", ff; rename_terminal_res=false)
 
 function phi_wrapper(sys, args...; kwargs...)
-    rad2deg(torsion_angle(sys.coords[2], sys.coords[7], sys.coords[9],
+    rad2deg(torsion_angle(sys.coords[5], sys.coords[7], sys.coords[9],
                           sys.coords[15], sys.boundary))
 end
 
 function psi_wrapper(sys, args...; kwargs...)
     rad2deg(torsion_angle(sys.coords[7], sys.coords[9], sys.coords[15],
                           sys.coords[17], sys.boundary))
-end
-
-const boundary = sys.boundary 
-function φ(x)
-    return torsion_angle(x[7], x[9], x[15], x[17], boundary)
 end
 
 sys = System(
@@ -33,9 +29,11 @@ sys = System(
     implicit_solvent="gbn2",
 )
 
-T = 300.0u"K"
-kB = 1.380649e-23u"J/K"  # Boltzmann constant in joules per kelvin
-simulator = ConstrainedIntegrator_PVD2(dt=0.0005u"ps", sigma=sqrt(2 * kB * T), φ=φ)
+temp = 300.0u"K"
+timestep = 0.002u"ps"
+fric = 5000.0u"ps^-1"
+simulator = CVConstrainedOverdampedLangevin(dt=timestep, T=temp, γ=fric, φ_grid=ConstrainedDynamicsSimulator.Dihedrals.φ_grid, φ_flat=ConstrainedDynamicsSimulator.Dihedrals.φ_flat)
+
+ConstrainedDynamicsSimulator.simulate!(sys, simulator, 2_000) # This will take a little while to run
 
 
-ConstrainedDynamicsSimulator.simulate!(sys, simulator, 200_000) # This will take a little while to run
