@@ -1,56 +1,75 @@
 export MT2
 
-function MT2!(sys, sim, x0, F_x_barₖ₋₁, d, noise)
-    x0 .= sys.coords + sim.dt * F_x_barₖ₋₁ / 4 
-    gradφ .= ForwardDiff.gradient(sim.φ, x0)
+function sample_chi_vector(d)
+    return [@SVector rand([-1.0, 1.0], 3) for _ in 1:d]
+end
+
+# TODO: add typing here
+function MT2!(coords, gradφ, dt, sigma, φ_grid, x0, F_x_barₖ₋₁, d, noise)
+    # grid
+    x0 .= coords + dt * F_x_barₖ₋₁ / 4 
+    # grid
+    gradφ .= clean_gradient(Zygote.gradient(φ_grid, x0)[1])
 
     # Generate random variables χ for each dimension
-    χ = rand([-1, 1], d)
+    # grid
+    χ = sample_chi_vector(d)
 
-    # Construct the Ja matrix (d x d)
-    J = zeros(d, d)
+    # Construct the Ja matrix (3d x 3d)
+    # flat 
+    J = zeros(3d, 3d)
     # TODO: consider multithreading this part of the code
-    for a in 1:d
-        for b in 1:d
+    # TODO: or making more efficient to avoid quadratic cost!
+    for a in 1:3d
+        for b in 1:3d
+            i_a, j_a = divrem(a - 1, 3) .+ 1  # Convert flat index to (row, col)
+            i_b, j_b = divrem(b - 1, 3) .+ 1
+
             if a == b
-                J[a, b] = dt * (noise[b]^2 - 1) / 2
+                J[a, b] = dt * (noise[i_b][j_b]^2 - 1) / 2
             elseif a > b
-                J[a, b] = dt * (noise[a] * noise[b] - χ[a]) / 2
+                J[a, b] = dt * (noise[i_a][j_a] * noise[i_b][j_b] - χ[i_a][j_a]) / 2
             else
-                J[a, b] = dt * (noise[a] * noise[b] + χ[b]) / 2
+                J[a, b] = dt * (noise[i_a][j_a] * noise[i_b][j_b] + χ[i_b][j_b]) / 2
             end
         end
     end
 
     # Initialize result vector
-    result = zeros(d)  
+    # grid
+    result = similar(gradφ)
 
     # Computing the first term
     # TODO: consider multithreading this part of the code
-    # TODO: assign arg1 and arg2 at beginning of loop for speed-up?
-    for a in 1:d
+    # grid
+    PJa = similar(gradφ)
+    arg1 = similar(gradφ)
+    arg2 = similar(gradφ)
+    eI = [zeros(3) for _ in 1:d]
+    for a in 1:3d
         # Compute the arguments based on D_x0 * Ja
-        PJa = compute_Pvec(gradφ, J[a, :])
-        arg1 = x0 + sim.sigma * PJa
-        arg2 = x0 - sim.sigma * PJa
+        compute_Pvec!(PJa, gradφ, unflatten(J[a, :]))
+        arg1 .= x0 + sigma * PJa
+        arg2 .= x0 - sigma * PJa
 
         # Accumulate results for D_vec[a](...) corresponding to Da in the equation
-        eI = zeros(eltype(x0), length(x))
-        eI[a] = 1
+        i_a, j_a = divrem(a - 1, 3) .+ 1
+        eI[i_a][j_a] = 1.0
         # TODO: Should I put a dot here?
-        result += 0.5 * sigma * (compute_Pvec_x(arg1, eI) - compute_Pvec_x(arg2, eI))
+        result += 0.5 * sigma * (compute_Pvec_x(φ_grid, arg1, eI) - compute_Pvec_x(φ_grid, arg2, eI))
+        eI[i_a][j_a] = 0.0
     end
 
     # Computing the second term
-    sqrt_dt = sqrt(sim.dt)
-    sqrt_dt_half = sqrt(sim.dt / 2)
+    sqrt_dt = sqrt(dt)
+    sqrt_dt_half = sqrt(dt / 2)
 
     Pχ = compute_Pvec(gradφ, χ)
-    arg1 = x0 + sqrt_dt_half * sigma * Pχ
-    arg2 = x0 - sqrt_dt_half * sigma * Pχ
+    arg1 .= x0 + sqrt_dt_half * sigma * Pχ
+    arg2 .= x0 - sqrt_dt_half * sigma * Pχ
 
     # The last term involves the entire diffusion tensor D, not individual components
-    result += (sigma^2) * sqrt_dt / 2 * (compute_Pvec_x(arg1, noise) + compute_Pvec_x(arg2, noise))  
+    result += (sigma^2) * sqrt_dt / 2 * (compute_Pvec_x(φ_grid, arg1, noise) + compute_Pvec_x(φ_grid, arg2, noise))  
 
     return result
 end

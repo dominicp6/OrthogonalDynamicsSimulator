@@ -1,46 +1,38 @@
-export compute_PgradV, compute_divP, compute_Pvec, compute_Pvec_x
+export clean_gradient, compute_divP, compute_divP_efficient, compute_Pvec, compute_Pvec_x, compute_Pvec!
 
-# Compute P(x) ∇V(x) = ∇V(x) - (∇φ(x)) (∇φ(x)ᵀ ∇V(x))
-function compute_PgradV(φ, x::AbstractVector, gradV::AbstractVector)
-    gradφ = ForwardDiff.gradient(φ, x)
-    return gradV - gradφ * (dot(gradφ, gradV)), gradφ
+flatten(x::Vector{SVector{3,Float64}}) = reinterpret(Float64, x)
+unflatten(x::Vector{Float64}) = reinterpret(SVector{3,Float64}, x)
+
+function clean_gradient(gradient)
+    return map(g -> something(g, SVector{3, Float64}(0.0, 0.0, 0.0)), gradient)
 end
 
-# Compute div P(x) where [divP(x)]ₖ = (∂ₖφ) tr(H(φ)) + [H(φ)*∇φ(x)]ₖ.
-# For high-dimensional problems, one would compute H*∇φ via a Hessian–vector product.
-function compute_divP(φ, gradφ::AbstractVector, x::AbstractVector)
-    H = ForwardDiff.hessian(φ, x)
-    laplacian = sum(diag(H))  # tr(H)
-    return gradφ * laplacian + H * gradφ
+function compute_Pvec(;gradφ::AbstractVector{SVector{3,Float64}}, vec::AbstractVector) :: AbstractVector{SVector{3,Float64}}
+    return vec .- gradφ .* dot(gradφ, vec) ./ (dot(gradφ, gradφ))
 end
 
-function compute_Pvec(gradφ::AbstractVector, vec::AbstractVector)
-    return vec - gradφ * dot(gradφ, vec)
+function compute_Pvec!(Pvec::AbstractVector{SVector{3,Float64}}; gradφ::AbstractVector{SVector{3,Float64}}, vec::AbstractVector{SVector{3,Float64}})
+    Pvec .= vec .- gradφ .* dot(gradφ, vec) ./ (dot(gradφ, gradφ))
 end
 
-function compute_Pvec_x(x::AbstractVector, vec::AbstractVector)
-    gradφ = ForwardDiff.gradient(φ, x)
-    return vec - gradφ * dot(gradφ, vec)
+function compute_Pvec_x(;φ_grid::Function, vec::AbstractVector, x::AbstractVector{SVector{3,Float64}}) :: Tuple{AbstractVector{SVector{3,Float64}},AbstractVector{SVector{3,Float64}}}
+    gradφ = clean_gradient(Zygote.gradient(φ_grid, x)[1])
+    return vec .- (gradφ .* dot(gradφ, vec)) ./ (dot(gradφ, gradφ)), gradφ 
 end
 
-# Compute the Hessian-vector product H(φ(x)) * v without forming the full Hessian.
-# function hvp(φ, x::AbstractVector, v::AbstractVector)
-#     # Promote each xᵢ to a Dual with seed vᵢ
-#     x_dual = ForwardDiff.Dual.(x, v)
-#     # Compute the gradient; each component is a Dual number whose derivative is the directional derivative
-#     grad_dual = ForwardDiff.gradient(φ, x_dual)
-#     # Extract the derivative part (a one-element tuple) from each Dual
-#     return [first(ForwardDiff.partials(g)) for g in grad_dual]
-# end
+function compute_Pvec_x!(Pvec::AbstractVector{SVector{3,Float64}}, gradφ::AbstractVector{SVector{3,Float64}} ;φ_grid::Function, vec::AbstractVector, x::AbstractVector{SVector{3,Float64}}) 
+    gradφ .= clean_gradient(Zygote.gradient(φ_grid, x)[1])
+    Pvec .= vec .- gradφ .* dot(gradφ, vec) ./ (dot(gradφ, gradφ))
+end
 
-# # Compute div P(x)_k = (∂ₖ φ) (tr H(φ)) + [H(φ)∇φ]_k,
-# # where we compute H(φ)∇φ using our Hessian-vector product.
-# function compute_divP(φ, x::AbstractVector)
-#     gradφ = ForwardDiff.gradient(φ, x)
-#     # Laplacian: for moderate n, use full Hessian; for high-dim, consider alternative strategies.
-#     H = ForwardDiff.hessian(φ, x)
-#     laplacian = sum(diag(H))
-#     # Compute Hessian-vector product H(φ(x))*gradφ(x) efficiently:
-#     H_gradφ = hvp(φ, x, gradφ)
-#     return gradφ * laplacian + H_gradφ
-# end
+function compute_divP(;φ_flat::Function, gradφ::AbstractVector{SVector{3,Float64}}, x::AbstractVector{SVector{3,Float64}}) :: AbstractVector{SVector{3,Float64}}
+    x_flat = flatten(x)             # Flatten x to 3N vector
+    g = flatten(gradφ)              # ∇φ as 3N vector
+    H = Zygote.hessian(φ_flat, x_flat)  # 3N × 3N Hessian
+    laplacian = sum(diag(H))        # ∇²φ = tr(H)
+    Hg = H * g                      # H ∇φ
+    gHg = dot(g, Hg)                # ∇φ^T H ∇φ
+    norm_g_sq = dot(g, g)           # ||∇φ||²
+    div_P = - (laplacian / norm_g_sq) * g + (2 * gHg / (norm_g_sq^2)) * g - (1 / norm_g_sq) * Hg                  # Number of particles
+    return unflatten(div_P)  # Unflatten to N 3-vectors
+end
