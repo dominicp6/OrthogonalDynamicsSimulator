@@ -1,7 +1,7 @@
 using Molly
 using ProgressMeter
 using Random
-export CVConstrainedOverdampedLangevin, simulate!, simulateOverdamped!
+export CVConstrainedOverdampedLangevin, euler_maruyama!, euler_maruyama_split_time!
 
 function are_units_same(u1::Unitful.Units, u2::Unitful.Units)
     # Check if dimensions match
@@ -35,7 +35,7 @@ function sample_noise_vector!(data)
     end
 end
 
-@inline function simulate!(sys,
+@inline function euler_maruyama!(sys,
                            sim::CVConstrainedOverdampedLangevin,
                            n_steps::Integer;
                            n_threads::Integer=Threads.nthreads(),
@@ -158,10 +158,12 @@ end
 end
 
 
-@inline function simulate_lambda_correction!(sys,
+@inline function euler_maruyama_split_time!(sys,
     sim::CVConstrainedOverdampedLangevin,
     n_steps::Integer;
     n_threads::Integer=Threads.nthreads(),
+    tol=1e-6, 
+    max_iter=50,
     run_loggers=true)
 
     if length(sys.constraints) > 0
@@ -227,7 +229,7 @@ end
         divP .= compute_divP(φ_flat=sim.φ_flat, gradφ=gradφ, x=x_barₖ)
         compute_Pvec!(Pnoise, gradφ=gradφ, vec=noise)
         x_barₖ .+= ((P_M_inv_F) ./friction_nounits) .* dt .+ noise_scaling .* Pnoise   # no explicit division by m here because we assume an identity mass matrix (in units of g mol^-1)
-        λ, stopping_condition = find_lambda(sim.φ_grid, x_barₖ, divP, k_bT, friction_nounits, dt, constrained_CV)
+        λ, stopping_condition = find_lambda(sim.φ_grid, x_barₖ, divP, k_bT, friction_nounits, dt, constrained_CV, tol=tol, max_iter=max_iter)
         stopping_condition_counts[stopping_condition] += 1
         x_barₖ .+= (k_bT * divP ./ friction_nounits) .* λ .* dt
         sys.coords .= wrap_coords.(x_barₖ * uX, (sys.boundary,))
@@ -243,7 +245,7 @@ end
 end
 
 
-
+# For benchmarking against the standard molly implementation of regular overdamped langevin dynamics
 @inline function simulateOverdamped!(sys,
     sim::OverdampedLangevin,
     n_steps::Integer;
