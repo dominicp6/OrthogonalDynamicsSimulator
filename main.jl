@@ -32,8 +32,8 @@ sys = System(
 temp = 300.0u"K"
 timestep = 0.002u"ps"
 fric = 5000.0u"ps^-1"
-simulator = CVConstrainedOverdampedLangevin(dt=timestep, T=temp, γ=fric, φ_grid=ConstrainedDynamicsSimulator.Dihedrals.φ_grid, φ_flat=ConstrainedDynamicsSimulator.Dihedrals.φ_flat)
+simulator = ConstrainedDynamicsSimulator.CVConstrainedOverdampedLangevin(dt=timestep, T=temp, γ=fric, φ_grid=ConstrainedDynamicsSimulator.Dihedrals.φ_grid, φ_flat=ConstrainedDynamicsSimulator.Dihedrals.φ_flat)
 
-ConstrainedDynamicsSimulator.simulate!(sys, simulator, 2_000) # This will take a little while to run
+ConstrainedDynamicsSimulator.PVD2!(sys, simulator, 2_000) # This will take a little while to run
 
 

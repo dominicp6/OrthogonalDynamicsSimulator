@@ -221,7 +221,7 @@ end
         v = sample_noise_vector(length(grad_phi))
         v_flat = flatten(v)
         P_explicit = I(length(grad_phi_flat)) - (grad_phi_flat * grad_phi_flat') ./ dot(grad_phi_flat, grad_phi_flat)
-        @test P_explicit * v_flat ≈ flatten(compute_Pvec_x(φ_grid=φ_grid, vec=v, x=grid_config)[1])
+        @test P_explicit * v_flat ≈ flatten(compute_Pvec_x(φ=φ_grid, vec=v, x=grid_config)[1])
     end
 
     # Test compute_Pvec! with grid_config
@@ -244,8 +244,44 @@ end
         v_flat = flatten(v)
         Pvec = similar(grad_phi)
         P_explicit = I(length(grad_phi_flat)) - (grad_phi_flat * grad_phi_flat') ./ dot(grad_phi_flat, grad_phi_flat)
-        compute_Pvec_x!(Pvec, grad_phi, φ_grid=φ_grid, vec=v, x=grid_config)
+        compute_Pvec_x!(Pvec, grad_phi, φ=φ_grid, vec=v, x=grid_config)
         @test P_explicit * v_flat ≈ flatten(Pvec)
+    end
+
+    # Test compute_Pvec with flat_config
+    @testset "compute_Pvec with flat_config" begin
+        grad_phi = clean_gradient(Zygote.gradient(φ_flat, flat_config)[1])
+        v = randn(length(grad_phi))
+        P_explicit = I(length(grad_phi)) - (grad_phi * grad_phi') ./ dot(grad_phi, grad_phi)
+        @test P_explicit * v ≈ compute_Pvec(gradφ=grad_phi, vec=v)
+    end
+
+    # Test compute_Pvec_x with flat_config
+    @testset "compute_Pvec_x with flat_config" begin
+        grad_phi = clean_gradient(Zygote.gradient(φ_flat, flat_config)[1])
+        v = randn(length(grad_phi))
+        P_explicit = I(length(grad_phi)) - (grad_phi * grad_phi') ./ dot(grad_phi, grad_phi)
+        @test P_explicit * v ≈ compute_Pvec_x(φ=φ_flat, vec=v, x=flat_config)[1]
+    end
+
+    # Test compute_Pvec! with flat_config
+    @testset "compute_Pvec! with flat_config" begin
+        grad_phi = clean_gradient(Zygote.gradient(φ_flat, flat_config)[1])
+        v = randn(length(grad_phi))
+        Pvec = similar(grad_phi)
+        P_explicit = I(length(grad_phi)) - (grad_phi * grad_phi') ./ dot(grad_phi, grad_phi)
+        compute_Pvec!(Pvec, gradφ=grad_phi, vec=v)
+        @test P_explicit * v ≈ Pvec
+    end
+
+    # Test compute_Pvec_x! with flat_config
+    @testset "compute_Pvec_x! with flat_config" begin
+        grad_phi = clean_gradient(Zygote.gradient(φ_flat, flat_config)[1])
+        v = randn(length(grad_phi))
+        Pvec = similar(grad_phi)
+        P_explicit = I(length(grad_phi)) - (grad_phi * grad_phi') ./ dot(grad_phi, grad_phi)
+        compute_Pvec_x!(Pvec, grad_phi, φ=φ_flat, vec=v, x=flat_config)
+        @test P_explicit * v ≈ Pvec
     end
 end
 
@@ -258,4 +294,87 @@ end
     norm_g_sq = dot(g, g)           # ||∇φ||²
     div_P = - (laplacian / norm_g_sq) * g + (2 * gHg / (norm_g_sq^2)) * g - (1 / norm_g_sq) * Hg    
     @test div_P ≈ [-167/98, 50/49, 110/49]
+end
+
+# MT2 integrator
+
+function sample_chi_vector(d)
+    return [@SVector rand([-1.0, 1.0], 3) for _ in 1:d]
+end
+
+
+@testset "MT2: J matrix" begin
+    χ = [-1, 1, 1]
+    noise = [0.5, 0.25, 0.1]
+    d = 3
+    J = zeros(d, d)
+    for a in 1:d
+        for b in 1:d
+            if a == b
+                J[a, b] = (noise[b]^2 - 1) / 2
+            elseif a > b
+                J[a, b] = (noise[a] * noise[b] - χ[a]) / 2
+            else
+                J[a, b] = (noise[a] * noise[b] + χ[b]) / 2
+            end
+        end
+    end
+
+    @test J ≈ [(0.25-1)/2 (0.5*0.25+1)/2 (0.05+1)/2;
+               (0.5*0.25-1)/2 (0.25*0.25-1)/2 (0.025+1)/2;
+               (0.05-1)/2 (0.025-1)/2 (0.01-1)/2]
+end
+
+@testset "MT2: Pa calculation" begin
+    x0 = flat_config
+    noise_prefactor = 1.0
+    d = length(x0)
+    noise = randn(d)
+    χ = rand([-1, 1], d)
+    J = zeros(d, d)
+    for a in 1:d
+        for b in 1:d
+            if a == b
+                J[a, b] = (noise[b]^2 - 1) / 2
+            elseif a > b
+                J[a, b] = (noise[a] * noise[b] - χ[a]) / 2
+            else
+                J[a, b] = (noise[a] * noise[b] + χ[b]) / 2
+            end
+        end
+    end
+
+
+    PJa = similar(x0)
+    arg1 = similar(x0)
+    arg2 = similar(x0)
+    result = similar(x0)
+    eI = [0.0 for _ in 1:d]
+    gradφ = clean_gradient(Zygote.gradient(φ_flat, x0)[1])
+    for a in 1:d
+        compute_Pvec!(PJa, gradφ=gradφ, vec=J[a, :])
+        arg1 .= x0 .+ noise_prefactor .* PJa
+        arg2 .= x0 .- noise_prefactor .* PJa
+
+        eI[a] = 1.0
+        result .+= 0.5 .* noise_prefactor .* (compute_Pvec_x(φ=φ_flat, vec=eI, x=arg1)[1] - compute_Pvec_x(φ=φ_flat, vec=eI, x=arg2)[1])
+        eI[a] = 0.0
+    end
+
+    expected_result = similar(x0)
+    gradφ = clean_gradient(Zygote.gradient(φ_flat, flat_config)[1])
+    P_explicit = I(length(gradφ)) - (gradφ * gradφ') ./ dot(gradφ, gradφ)
+    for a in 1:d
+        PJa = P_explicit * J[a, :]
+        arg1 .= x0 .+ noise_prefactor .* PJa
+        arg2 .= x0 .- noise_prefactor .* PJa
+
+        grad_phi_flat_arg1 = clean_gradient(Zygote.gradient(φ_flat, arg1)[1])
+        grad_phi_flat_arg2 = clean_gradient(Zygote.gradient(φ_flat, arg2)[1])
+        P_explicit_arg1 = I(length(grad_phi_flat_arg1)) - (grad_phi_flat_arg1 * grad_phi_flat_arg1') ./ dot(grad_phi_flat_arg1, grad_phi_flat_arg1)
+        P_explicit_arg2 = I(length(grad_phi_flat_arg2)) - (grad_phi_flat_arg2 * grad_phi_flat_arg2') ./ dot(grad_phi_flat_arg2, grad_phi_flat_arg2)
+        expected_result .+= 0.5 .* noise_prefactor .* (P_explicit_arg1[a,:] - P_explicit_arg2[a,:])
+    end
+    
+    @test result ≈ expected_result
 end

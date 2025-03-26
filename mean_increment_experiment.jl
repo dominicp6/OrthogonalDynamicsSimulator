@@ -40,28 +40,36 @@ timestep = 0.002u"ps"
 fric = 5000.0u"ps^-1"
 temps = [3.0 * 10^(x) for x in 0:0.1:3]
 pushfirst!(temps, 3.0)
-traj_length = 100_000
+traj_length = 1_000_000
 logging_interval = 1
 phi_data_array = zeros((length(temps), div(traj_length, logging_interval) + 1))
 psi_data_array = zeros((length(temps), div(traj_length, logging_interval) + 1))
-# stopping_condition_data = zeros((length(temps), 3))
 timing_results = zeros(length(temps))
 mean_phi_increment = zeros(length(temps))
 mean_psi_increment = zeros(length(temps))
+mean_phi_curvature = zeros(length(temps))
+mean_psi_curvature = zeros(length(temps))
 
-for idx in 1:length(temps)
+@threads for idx in 1:length(temps)
     start_time = time_ns()
 
     temp = temps[idx]
     sys = init_system(logging_interval)
     temp = temp*u"K"
-    simulator = CVConstrainedOverdampedLangevin(dt=timestep, T=temp, γ=fric, φ_grid=ConstrainedDynamicsSimulator.Dihedrals.φ_grid, φ_flat=ConstrainedDynamicsSimulator.Dihedrals.φ_flat)
-    sys = ConstrainedDynamicsSimulator.simulate!(sys, simulator, traj_length)
+    simulator = ConstrainedDynamicsSimulator.CVConstrainedOverdampedLangevin(dt=timestep, T=temp, γ=fric, φ_grid=ConstrainedDynamicsSimulator.Dihedrals.φ_grid, φ_flat=ConstrainedDynamicsSimulator.Dihedrals.φ_flat)
+    sys = ConstrainedDynamicsSimulator.PVD2!(sys, simulator, traj_length)
     phi_data_array[idx, :] = values(sys.loggers.phi)
     psi_data_array[idx, :] = values(sys.loggers.psi)
+    
+    # First-order differences (D1)
     mean_phi_increment[idx] = mean(abs.(diff(values(sys.loggers.phi))))
     mean_psi_increment[idx] = mean(abs.(diff(values(sys.loggers.psi))))
-    # stopping_condition_data[idx, :] = stopping_condition_counts
+    
+    # Second-order differences (D2) - mean curvature
+    phi_second_diff = diff(diff(values(sys.loggers.phi)))
+    psi_second_diff = diff(diff(values(sys.loggers.psi)))
+    mean_phi_curvature[idx] = mean(abs.(phi_second_diff))
+    mean_psi_curvature[idx] = mean(abs.(psi_second_diff))
 
     timing_results[idx] = (time_ns() - start_time) * 1e-9
 end
@@ -76,12 +84,11 @@ df = DataFrame(
     Mean_Phi_Angles = mean_phi_angles,
     Std_Phi_Angles = std_phi_angles,
     Mean_Phi_Increment = mean_phi_increment,
+    Mean_Phi_Curvature = mean_phi_curvature,  # Added D2 metric
     Mean_Psi_Angles = mean_psi_angles,
     Std_Psi_Angles = std_psi_angles,
     Mean_Psi_Increment = mean_psi_increment,
-    # Stopping1 = stopping_condition_data[:, 1],
-    # Stopping2 = stopping_condition_data[:, 2],
-    # Stopping3 = stopping_condition_data[:, 3],
+    Mean_Psi_Curvature = mean_psi_curvature,  # Added D2 metric
     Timing_Results = timing_results
 )
 
@@ -94,7 +101,7 @@ metadata = """
 # Number of Temperatures: $(length(temps))
 """
 
-open("./results/EM/mean_and_std_angles_with_times_$(traj_length).csv", "w") do io
+open("./results/EM/mean_and_std_angles_PVD2_$(traj_length).csv", "w") do io
     write(io, metadata)
     CSV.write(io, df; append=true, writeheader=true)
 end
