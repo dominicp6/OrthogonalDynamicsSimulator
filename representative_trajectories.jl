@@ -47,10 +47,10 @@ psi_data_array = zeros((length(temps), div(traj_length, logging_interval) + 1))
     temp = temps[idx]
     sys = init_system(logging_interval)
     temp = temp*u"K"
-    simulator = CVConstrainedOverdampedLangevin(dt=timestep, T=temp, γ=fric, 
+    simulator = ConstrainedDynamicsSimulator.CVConstrainedOverdampedLangevin(dt=timestep, T=temp, γ=fric, 
         φ_grid=ConstrainedDynamicsSimulator.Dihedrals.φ_grid, 
         φ_flat=ConstrainedDynamicsSimulator.Dihedrals.φ_flat)
-    ConstrainedDynamicsSimulator.simulate_lambda_correction!(sys, simulator, traj_length)
+    ConstrainedDynamicsSimulator.PVD1!(sys, simulator, traj_length)
     
     # Store data in arrays
     phi_data_array[idx, :] = values(sys.loggers.phi)
@@ -71,7 +71,7 @@ psi_data_array = zeros((length(temps), div(traj_length, logging_interval) + 1))
     # Trajectory Length: $(traj_length) steps
     # Logging Interval: $(logging_interval)
     """
-    open("./results/trajectories/phi_trajectory_lambda_correction_$(temp).csv", "w") do io
+    open("./results/trajectories/phi_trajectory_PVD1_$(temp).csv", "w") do io
         write(io, phi_metadata)
         CSV.write(io, phi_df; append=true, writeheader=true)
     end
@@ -88,7 +88,7 @@ psi_data_array = zeros((length(temps), div(traj_length, logging_interval) + 1))
     # Trajectory Length: $(traj_length) steps
     # Logging Interval: $(logging_interval)
     """
-    open("./results/trajectories/psi_trajectory_lambda_correction_$(temp).csv", "w") do io
+    open("./results/trajectories/psi_trajectory_PVD1_$(temp).csv", "w") do io
         write(io, psi_metadata)
         CSV.write(io, psi_df; append=true, writeheader=true)
     end

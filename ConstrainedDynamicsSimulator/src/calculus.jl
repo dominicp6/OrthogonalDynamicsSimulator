@@ -7,25 +7,29 @@ function clean_gradient(gradient)
     return map(g -> something(g, SVector{3, Float64}(0.0, 0.0, 0.0)), gradient)
 end
 
-function compute_Pvec(;gradφ::AbstractVector{SVector{3,Float64}}, vec::AbstractVector) :: AbstractVector{SVector{3,Float64}}
-    return vec .- gradφ .* dot(gradφ, vec) ./ (dot(gradφ, gradφ))
+# TODO: need to test these in flattened form
+function compute_Pvec(;gradφ::AbstractVector, vec::AbstractVector) :: AbstractVector
+    return vec .- gradφ .* dot(gradφ, vec) ./ dot(gradφ, gradφ)
 end
 
-function compute_Pvec!(Pvec::AbstractVector{SVector{3,Float64}}; gradφ::AbstractVector{SVector{3,Float64}}, vec::AbstractVector{SVector{3,Float64}})
-    Pvec .= vec .- gradφ .* dot(gradφ, vec) ./ (dot(gradφ, gradφ))
+function compute_Pvec!(Pvec::AbstractVector; gradφ::AbstractVector, vec::AbstractVector)
+    Pvec .= vec .- gradφ .* dot(gradφ, vec) ./ dot(gradφ, gradφ)
 end
 
-function compute_Pvec_x(;φ_grid::Function, vec::AbstractVector, x::AbstractVector{SVector{3,Float64}}) :: Tuple{AbstractVector{SVector{3,Float64}},AbstractVector{SVector{3,Float64}}}
-    gradφ = clean_gradient(Zygote.gradient(φ_grid, x)[1])
-    return vec .- (gradφ .* dot(gradφ, vec)) ./ (dot(gradφ, gradφ)), gradφ 
+function compute_Pvec_x(;φ::Function, vec::AbstractVector, x::AbstractVector) :: Tuple{AbstractVector, AbstractVector}
+    # phi should be either phi_grid or phi_flat to match the shape of the vectors
+    gradφ = clean_gradient(Zygote.gradient(φ, x)[1])
+    return vec .- (gradφ .* dot(gradφ, vec)) ./ dot(gradφ, gradφ), gradφ
 end
 
-function compute_Pvec_x!(Pvec::AbstractVector{SVector{3,Float64}}, gradφ::AbstractVector{SVector{3,Float64}} ;φ_grid::Function, vec::AbstractVector, x::AbstractVector{SVector{3,Float64}}) 
-    gradφ .= clean_gradient(Zygote.gradient(φ_grid, x)[1])
-    Pvec .= vec .- gradφ .* dot(gradφ, vec) ./ (dot(gradφ, gradφ))
+function compute_Pvec_x!(Pvec::AbstractVector, gradφ::AbstractVector; φ::Function, vec::AbstractVector, x::AbstractVector)
+    # phi should be either phi_grid or phi_flat to match the shape of the vectors
+    gradφ .= clean_gradient(Zygote.gradient(φ, x)[1])
+    Pvec .= vec .- gradφ .* dot(gradφ, vec) ./ dot(gradφ, gradφ)
 end
 
-function compute_divP(;φ_flat::Function, gradφ::AbstractVector{SVector{3,Float64}}, x::AbstractVector{SVector{3,Float64}}) :: AbstractVector{SVector{3,Float64}}
+
+function compute_divP(;φ_flat::Function, gradφ::AbstractVector{<:Union{SVector{3, Float64}, Float64}}, x::AbstractVector{<:Union{SVector{3, Float64}, Float64}}) :: AbstractVector{<:Union{SVector{3, Float64}, Float64}}
     x_flat = flatten(x)             # Flatten x to 3N vector
     g = flatten(gradφ)              # ∇φ as 3N vector
     H = Zygote.hessian(φ_flat, x_flat)  # 3N × 3N Hessian
