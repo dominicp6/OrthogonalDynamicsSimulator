@@ -31,7 +31,7 @@ struct SimParams
 end
 
 # Shared initialisation function
-@inline function init_simulation(sys, sim::CVConstrainedOverdampedLangevin, n_threads::Integer, run_loggers::Bool)
+@inline function init_simulation(sys, sim::CVConstrainedOverdampedLangevin, n_threads::Integer, run_loggers::Bool)    
     # Warn if constraints are present
     isempty(sys.constraints) || @warn "CVConstrainedOverdampedLangevin ignores constraints"
 
@@ -43,6 +43,7 @@ end
     friction_nounits = ustrip(sim.γ)
     k_bT = ustrip(sys.k) * ustrip(sim.T)
     dt = ustrip(sim.dt)
+    params = SimParams(dt, k_bT, friction_nounits, n_threads, run_loggers)
 
     # Coordinate initialisation
     sys.coords .= wrap_coords.(sys.coords, (sys.boundary,))
@@ -55,10 +56,11 @@ end
     # Forces and noise initialisation
     forces_nounits_t = ustrip_vec.(similar(sys.coords))
     forces_buffer = Molly.init_forces_buffer!(sys, forces_nounits_t, n_threads)
-    noise = sample_noise_vector(num_coords)
-
-    # Constrained dynamics initialisation
     accels_nounits_t = forces_nounits_t  # Identity mass matrix
+    noise = sample_noise_vector(num_coords)
+    compute_forces_and_noise!(sys, forces_nounits_t, accels_nounits_t, noise, neighbors, forces_buffer, 0, params)
+    
+    # Constrained dynamics initialisation
     P_F, gradφ = compute_Pvec_x(φ=sim.φ_grid, vec=accels_nounits_t, x=x)
     Pnoise = compute_Pvec(gradφ=gradφ, vec=noise)
     divP = compute_divP(φ_flat=sim.φ_flat, gradφ=gradφ, x=x)
@@ -68,8 +70,7 @@ end
     @assert are_units_same(uX, (uF / (uM * uγ)) * ut)
     @assert are_units_same(uX, uk * uT * ut / (uM * uγ * uX))
 
-    return (x, forces_nounits_t, accels_nounits_t, noise, P_F, Pnoise, divP, gradφ, neighbors, forces_buffer,
-            SimParams(dt, k_bT, friction_nounits, n_threads, run_loggers))
+    return (x, forces_nounits_t, accels_nounits_t, noise, P_F, Pnoise, divP, gradφ, neighbors, forces_buffer, params)
 end
 
 # Core update functions

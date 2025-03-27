@@ -38,7 +38,7 @@ end
 
 timestep = 0.002u"ps"
 fric = 5000.0u"ps^-1"
-temps = [3.0 * 10^(x) for x in 0:0.1:3]
+temps = [3.0 * 10^(x) for x in 0.0:0.1:3.0]
 pushfirst!(temps, 3.0)
 traj_length = 1_000_000
 logging_interval = 1

@@ -45,6 +45,7 @@ end
     x, forces_nounits_t, accels_nounits_t, noise, P_F, Pnoise, divP, gradφ, neighbors, forces_buffer, params = init_simulation(sys, sim, n_threads, run_loggers)
     noise_scaling = sqrt(params.k_bT * params.dt / (2 * params.friction_nounits))  # nm
     F_x_barₖ = (P_F + params.k_bT .* divP) ./ params.friction_nounits
+    # TODO: this is not quite initialised correctly
     F_x_barₖ₋₁ = copy(F_x_barₖ)
     x_barₖ = copy(x)
     progress = Progress(n_steps)
@@ -69,6 +70,7 @@ end
     x, forces_nounits_t, accels_nounits_t, noise, P_F, Pnoise, divP, gradφ, neighbors, forces_buffer, params = init_simulation(sys, sim, n_threads, run_loggers)
     noise_scaling = sqrt(params.k_bT * params.dt / (2 * params.friction_nounits))  # nm
     F_x_barₖ = (P_F + params.k_bT .* divP) ./ params.friction_nounits
+    # TODO: this is not quite initialised correctly
     F_x_barₖ₋₁ = copy(F_x_barₖ)
     x_barₖ = copy(x)
     progress = Progress(n_steps)
