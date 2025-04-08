@@ -37,10 +37,22 @@ function compute_divP(;φ_flat::Function, gradφ::AbstractVector{<:Union{SVector
     x_flat = flatten(x)             # Flatten x to 3N vector
     g = flatten(gradφ)              # ∇φ as 3N vector
     H = Zygote.hessian(φ_flat, x_flat)  # 3N × 3N Hessian
-    laplacian = sum(diag(H))        # ∇²φ = tr(H)
+    laplacianφ = sum(diag(H))        # ∇²φ = tr(H)
     Hg = H * g                      # H ∇φ
     gHg = dot(g, Hg)                # ∇φ^T H ∇φ
     norm_g_sq = dot(g, g)           # ||∇φ||²
-    div_P = - (laplacian / norm_g_sq) * g + (2 * gHg / (norm_g_sq^2)) * g - (1 / norm_g_sq) * Hg                  # Number of particles
+    div_P = - (laplacianφ / norm_g_sq) * g + (2 * gHg / (norm_g_sq^2)) * g - (1 / norm_g_sq) * Hg                  # Number of particles
     return unflatten(div_P)  # Unflatten to N 3-vectors
+end
+
+function compute_divP!(;φ_flat::Function, gradφ::AbstractVector{<:Union{SVector{3, Float64}, Float64}}, laplacianφ::AbstractVector, x::AbstractVector{<:Union{SVector{3, Float64}, Float64}}) :: AbstractVector{<:Union{SVector{3, Float64}, Float64}}
+    x_flat = flatten(x)             # Flatten x to 3N vector
+    g = flatten(gradφ)              # ∇φ as 3N vector
+    H = Zygote.hessian(φ_flat, x_flat)  # 3N × 3N Hessian
+    laplacianφ[1] = sum(diag(H))        # ∇²φ = tr(H)
+    Hg = H * g                      # H ∇φ
+    gHg = dot(g, Hg)                # ∇φ^T H ∇φ
+    norm_g_sq = dot(g, g)           # ||∇φ||²
+    div_P = - (laplacianφ[1] / norm_g_sq) * g + (2 * gHg / (norm_g_sq^2)) * g - (1 / norm_g_sq) * Hg                  # Number of particles
+    return unflatten(div_P)
 end

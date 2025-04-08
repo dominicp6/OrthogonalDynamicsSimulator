@@ -6,6 +6,7 @@ function sample_chi_vector(d)
     return [@SVector rand([-1.0, 1.0], 3) for _ in 1:d]
 end
 
+# TODO: This integrator is still broken and needs fixing
 @inline function MT2_efficient!(x0, dt, sqrt_dt, φ_flat, noise, x0_flat, noise_flat, d, gradφ, prefactor1, prefactor2, prefactor3, prefactor4, χ, result, result_final, PJa, arg1, arg2, Pxi1, Pxi2, ei, J_row, Pχ, proj1, proj2)
     # Flatten inputs
     x0_flat .= flatten(x0)
@@ -78,7 +79,6 @@ end
 
     # Construct the J matrix
     J = zeros(d, d)
-    # TODO: consider efficiency
     for a in 1:d
         for b in 1:d
             if a == b
@@ -99,7 +99,6 @@ end
     arg1 = similar(x0)
     arg2 = similar(x0)
     eI = [0.0 for _ in 1:d]
-    # TODO: consider efficiency
     for a in 1:d
         compute_Pvec!(PJa, gradφ=gradφ, vec=J[a, :])
         arg1 .= x0 .+ dt * prefactor2 .* PJa
