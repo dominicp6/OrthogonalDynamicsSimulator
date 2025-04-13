@@ -197,7 +197,7 @@ end
 #     return (x, forces_nounits_t, accels_nounits_t, noise, P_F, Pnoise, divP, gradφ, neighbors, forces_buffer, params)
 # end
 
-@inline function update_ergodic_integral!(compute_flag::Bool, quantity::Function, args...)
+@inline function update_ergodic_integral!(compute_flag::Bool, quantity::Union{Function, Nothing}, args...)
     if !compute_flag
         return 0.0
     else
@@ -236,6 +236,7 @@ end
     f(λ) = φ_grid(x_barₖ .+ correction .* λ) - target_CV
     
     λ = 0.0
+    f_val = 0.0
     for iter in 1:max_iter
         f_val = f(λ)
         if abs(f_val) < tol 
