@@ -21,7 +21,7 @@ include("./simulation_helpers.jl")
 # end
 
 @inline function euler_maruyama!(sys, sim::CVConstrainedOverdampedLangevin, n_steps::Integer; n_threads=Threads.nthreads(), run_loggers=true, compute_ergodic_integral=false, quantity=nothing)
-    x, forces_nounits_t, accels_nounits_t, noise, P_F, Pnoise, divP, gradφ, laplacianφ, neighbors, forces_buffer, 
+    x, forces_nounits_t, accels_nounits_t, noise, P_F, Pnoise, divP, gradφ, laplacianφ, gHg, neighbors, forces_buffer, 
     masses_nounits, friction_nounits, k_bT, dt = init_simulation(sys, sim, n_threads, run_loggers, compute_ergodic_integral, quantity)
 
     integral_value = 0.0
@@ -30,10 +30,10 @@ include("./simulation_helpers.jl")
     progress = Progress(n_steps)
     for step_n in 1:n_steps
         compute_forces_and_noise!(sys, forces_nounits_t, accels_nounits_t, noise, neighbors, forces_buffer, step_n, n_threads)
-        compute_drift_and_diffusion_components!(P_F, Pnoise, divP, gradφ, laplacianφ, sim, accels_nounits_t, noise, x)
+        compute_drift_and_diffusion_components!(P_F, Pnoise, divP, gradφ, laplacianφ, gHg, sim, accels_nounits_t, noise, x)
         @. x .+= (P_F + k_bT * divP) * (dt / friction_nounits) + noise_scaling * Pnoise
         neighbors = finalise_step!(sys, x, neighbors, forces_nounits_t, step_n, run_loggers, n_threads)
-        integral_value += update_ergodic_integral!(compute_ergodic_integral, quantity, gradφ, forces_nounits_t, laplacianφ, k_bT)
+        integral_value += update_ergodic_integral!(compute_ergodic_integral, quantity, gradφ, forces_nounits_t, laplacianφ, gHg, k_bT)
         next!(progress)
     end
 
@@ -71,7 +71,7 @@ end
 
 # Euler-Maruyama with split time and lambda correction
 @inline function euler_maruyama_split_time!(sys, sim::CVConstrainedOverdampedLangevin, n_steps::Integer; n_threads=Threads.nthreads(), tol=1e-6, max_iter=50, run_loggers=true, compute_ergodic_integral=false, quantity=nothing)
-    x, forces_nounits_t, accels_nounits_t, noise, P_F, Pnoise, divP, gradφ, laplacianφ, neighbors, forces_buffer, 
+    x, forces_nounits_t, accels_nounits_t, noise, P_F, Pnoise, divP, gradφ, laplacianφ, gHg, neighbors, forces_buffer, 
     masses_nounits, friction_nounits, k_bT, dt = init_simulation(sys, sim, n_threads, run_loggers, compute_ergodic_integral, quantity)
     
     noise_scaling = sqrt(2 * k_bT * dt / friction_nounits) / (1^(1/2))  # we assume an identity mass matrix
@@ -83,7 +83,7 @@ end
     progress = Progress(n_steps)
     for step_n in 1:n_steps
         compute_forces_and_noise!(sys, forces_nounits_t, accels_nounits_t, noise, neighbors, forces_buffer, step_n, n_threads)
-        compute_drift_and_diffusion_components!(P_F, Pnoise, divP, gradφ, laplacianφ, sim, accels_nounits_t, noise, x)
+        compute_drift_and_diffusion_components!(P_F, Pnoise, divP, gradφ, laplacianφ, gHg, sim, accels_nounits_t, noise, x)
         @. x .+= (P_F / friction_nounits) * dt + noise_scaling * Pnoise
         λ, stopping_condition, error, num_iter = find_lambda(sim.φ_grid, x, divP, k_bT, friction_nounits, dt, constrained_CV; tol=tol, max_iter=max_iter)
         stopping_condition_counts[stopping_condition] += 1
@@ -91,7 +91,7 @@ end
         num_iterations[step_n] = num_iter
         @. x .+= (k_bT * divP / friction_nounits) * λ * dt
         neighbors = finalise_step!(sys, x, neighbors, forces_nounits_t, step_n, run_loggers, n_threads)
-        integral_value += update_ergodic_integral!(compute_ergodic_integral, quantity, gradφ, forces_nounits_t, laplacianφ, k_bT)
+        integral_value += update_ergodic_integral!(compute_ergodic_integral, quantity, gradφ, forces_nounits_t, laplacianφ, gHg, k_bT)
         next!(progress)
     end
 
@@ -102,7 +102,7 @@ end
 
 
 @inline function PVD2!(sys, sim::CVConstrainedOverdampedLangevin, n_steps::Integer; n_threads=Threads.nthreads(), run_loggers=true, compute_ergodic_integral=false, quantity=nothing)
-    x, forces_nounits_t, accels_nounits_t, noise, P_F, Pnoise, divP, gradφ, laplacianφ, neighbors, forces_buffer, 
+    x, forces_nounits_t, accels_nounits_t, noise, P_F, Pnoise, divP, gradφ, laplacianφ, gHg, neighbors, forces_buffer, 
     masses_nounits, friction_nounits, k_bT, dt = init_simulation(sys, sim, n_threads, run_loggers, compute_ergodic_integral, quantity)
     
     noise_scaling = sqrt(k_bT * dt / (2 * friction_nounits))  # nm
@@ -116,15 +116,17 @@ end
         compute_Pvec_x!(Pnoise, gradφ, φ=sim.φ_grid, vec=noise, x=x) 
         @. x_barₖ .= x .+ noise_scaling .* Pnoise  
 
-        neighbors = finalise_step!(sys, x_barₖ, neighbors, forces_nounits_t, step_n, run_loggers, n_threads)
+        
         # Update ergodic integral
-        integral_value += update_ergodic_integral!(compute_ergodic_integral, quantity, gradφ, forces_nounits_t, laplacianφ, k_bT)
+        integral_value += update_ergodic_integral!(compute_ergodic_integral, quantity, gradφ, forces_nounits_t, laplacianφ, gHg, k_bT)
         
         compute_forces_and_noise!(sys, forces_nounits_t, accels_nounits_t, noise, neighbors, forces_buffer, step_n, n_threads) 
-        compute_drift_and_diffusion_components!(P_F, Pnoise, divP, gradφ, laplacianφ, sim, accels_nounits_t, noise, x_barₖ)
+        compute_drift_and_diffusion_components!(P_F, Pnoise, divP, gradφ, laplacianφ, gHg, sim, accels_nounits_t, noise, x_barₖ)
         @. F_x_barₖ .= (P_F + k_bT * divP) / friction_nounits
         x .+= dt * F_x_barₖ + MT2(x .+ dt * F_x_barₖ₋₁ / 4, dt, k_bT, friction_nounits, sim.φ_flat, noise)
         F_x_barₖ₋₁ .= F_x_barₖ
+
+        neighbors = finalise_step!(sys, x, neighbors, forces_nounits_t, step_n, run_loggers, n_threads)
 
         next!(progress)
     end
@@ -135,7 +137,7 @@ end
 end
 
 @inline function PVD2_split_time_option1!(sys, sim::CVConstrainedOverdampedLangevin, n_steps::Integer; n_threads=Threads.nthreads(), tol=1e-6, max_iter=50, run_loggers=true, compute_ergodic_integral=false, quantity=nothing)
-    x, forces_nounits_t, accels_nounits_t, noise, P_F, Pnoise, divP, gradφ, laplacianφ, neighbors, forces_buffer, 
+    x, forces_nounits_t, accels_nounits_t, noise, P_F, Pnoise, divP, gradφ, laplacianφ, gHg, neighbors, forces_buffer, 
     masses_nounits, friction_nounits, k_bT, dt = init_simulation(sys, sim, n_threads, run_loggers, compute_ergodic_integral, quantity)
     
     noise_scaling = sqrt(k_bT * dt / (2 * friction_nounits))  # nm
@@ -156,10 +158,10 @@ end
 
         neighbors = finalise_step!(sys, x_barₖ, neighbors, forces_nounits_t, step_n, run_loggers, n_threads)
         # Update ergodic integral
-        integral_value += update_ergodic_integral!(compute_ergodic_integral, quantity, gradφ, forces_nounits_t, laplacianφ, k_bT)
+        integral_value += update_ergodic_integral!(compute_ergodic_integral, quantity, gradφ, forces_nounits_t, laplacianφ, gHg, k_bT)
         
         compute_forces_and_noise!(sys, forces_nounits_t, accels_nounits_t, noise, neighbors, forces_buffer, step_n, n_threads) 
-        compute_drift_and_diffusion_components!(P_F, Pnoise, divP, gradφ, laplacianφ, sim, accels_nounits_t, noise, x_barₖ)
+        compute_drift_and_diffusion_components!(P_F, Pnoise, divP, gradφ, laplacianφ, gHg, sim, accels_nounits_t, noise, x_barₖ)
         @. F_x_barₖ .= (P_F + k_bT * divP) / friction_nounits
         x_starₖ .= x + dt * F_x_barₖ + MT2(x .+ dt * F_x_barₖ₋₁ / 4, dt, k_bT, friction_nounits, sim.φ_flat, noise)
         F_x_barₖ₋₁ .= F_x_barₖ
@@ -179,7 +181,7 @@ end
 end
 
 @inline function PVD2_split_time_option2!(sys, sim::CVConstrainedOverdampedLangevin, n_steps::Integer; n_threads=Threads.nthreads(), tol=1e-6, max_iter=50, run_loggers=true, compute_ergodic_integral=false, quantity=nothing)
-    x, forces_nounits_t, accels_nounits_t, noise, P_F, Pnoise, divP, gradφ, laplacianφ, neighbors, forces_buffer, 
+    x, forces_nounits_t, accels_nounits_t, noise, P_F, Pnoise, divP, gradφ, laplacianφ, gHg, neighbors, forces_buffer, 
     masses_nounits, friction_nounits, k_bT, dt = init_simulation(sys, sim, n_threads, run_loggers, compute_ergodic_integral, quantity)
     
     noise_scaling = sqrt(k_bT * dt / (2 * friction_nounits))  # nm
@@ -207,10 +209,10 @@ end
 
         neighbors = finalise_step!(sys, x_bar_starₖ, neighbors, forces_nounits_t, step_n, run_loggers, n_threads)
         # Update ergodic integral
-        integral_value += update_ergodic_integral!(compute_ergodic_integral, quantity, gradφ, forces_nounits_t, laplacianφ, k_bT)
+        integral_value += update_ergodic_integral!(compute_ergodic_integral, quantity, gradφ, forces_nounits_t, laplacianφ, gHg, k_bT)
         
         compute_forces_and_noise!(sys, forces_nounits_t, accels_nounits_t, noise, neighbors, forces_buffer, step_n, n_threads) 
-        compute_drift_and_diffusion_components!(P_F, Pnoise, divP, gradφ, laplacianφ, sim, accels_nounits_t, noise, x_bar_starₖ)
+        compute_drift_and_diffusion_components!(P_F, Pnoise, divP, gradφ, laplacianφ, gHg, sim, accels_nounits_t, noise, x_bar_starₖ)
         @. F_x_bar_starₖ .= (P_F + k_bT * divP) / friction_nounits
         x .+= dt * F_x_bar_starₖ + MT2(x .+ dt * F_x_bar_starₖ₋₁ / 4, dt, k_bT, friction_nounits, sim.φ_flat, noise)
         

@@ -42,8 +42,9 @@ function φ_grid(tiled_coords::Vector{SVector{3,Float64}})
     return compute_dihedral(A, B, C, D)
 end 
 
-function φ_mean_force(gradφ::AbstractVector{<:Union{SVector{3, Float64}, Float64}}, force::AbstractVector{<:Union{SVector{3, Float64}, Float64}}, laplacianφ::AbstractVector, k_bT::Float64)
-    return (-dot(gradφ, force)-k_bT*laplacianφ[1]) / (dot(gradφ, gradφ))
+function φ_mean_force(gradφ::AbstractVector{<:Union{SVector{3, Float64}, Float64}}, force::AbstractVector{<:Union{SVector{3, Float64}, Float64}}, laplacianφ::AbstractVector, gHg::AbstractVector, k_bT::Float64)
+    g2 = dot(gradφ, gradφ)
+    return (dot(gradφ, force)-k_bT*laplacianφ[1]) / g2 - 2 * k_bT * gHg[1] / g2^2
 end
 
 end

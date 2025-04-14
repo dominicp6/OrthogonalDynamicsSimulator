@@ -145,11 +145,12 @@ end
     Pnoise = compute_Pvec(gradφ=gradφ, vec=noise)
     @assert are_units_same(uX, (uF / (uM * uγ)) * ut)
     laplacianφ = [0.0]
-    divP = compute_divP!(φ_flat=sim.φ_flat, gradφ=gradφ, laplacianφ = laplacianφ, x=x)   # nm^-1
+    gHg = [0.0]
+    divP = compute_divP!(φ_flat=sim.φ_flat, gradφ=gradφ, laplacianφ=laplacianφ, gHg=gHg, x=x)   # nm^-1
     @assert are_units_same(uX, uk * uT * ut / (uM * uγ * uX))
 
     # Return all necessary variables
-    return (x, forces_nounits_t, accels_nounits_t, noise, P_F, Pnoise, divP, gradφ, laplacianφ, neighbors, forces_buffer, 
+    return (x, forces_nounits_t, accels_nounits_t, noise, P_F, Pnoise, divP, gradφ, laplacianφ, gHg, neighbors, forces_buffer, 
             masses_nounits, friction_nounits, k_bT, dt)
 end
 
@@ -218,9 +219,9 @@ end
 #     compute_Pvec!(Pnoise, gradφ=gradφ, vec=noise)
 # end
 
-@inline function compute_drift_and_diffusion_components!(P_F, Pnoise, divP, gradφ, laplacianφ, sim, accels_nounits_t, noise, x)
+@inline function compute_drift_and_diffusion_components!(P_F, Pnoise, divP, gradφ, laplacianφ, gHg, sim, accels_nounits_t, noise, x)
     compute_Pvec_x!(P_F, gradφ, φ=sim.φ_grid, vec=accels_nounits_t, x=x)
-    divP .= compute_divP!(φ_flat=sim.φ_flat, gradφ=gradφ, laplacianφ=laplacianφ, x=x)
+    divP .= compute_divP!(φ_flat=sim.φ_flat, gradφ=gradφ, laplacianφ=laplacianφ, gHg=gHg, x=x)
     compute_Pvec!(Pnoise, gradφ=gradφ, vec=noise)
 end
 
