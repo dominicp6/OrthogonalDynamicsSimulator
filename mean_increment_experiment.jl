@@ -7,6 +7,38 @@ using DataFrames
 using .Threads
 using Base: time_ns
 
+# Define the unwrapping function
+function unwrap_angles(angles)
+    unwrapped = similar(angles)
+    unwrapped[1] = angles[1]
+    for i in 2:length(angles)
+        Δ = angles[i] - angles[i-1]
+        Δ_adj = mod(Δ + 180, 360) - 180
+        unwrapped[i] = unwrapped[i-1] + Δ_adj
+    end
+    return unwrapped
+end
+
+# Function to compute circular mean of angles
+function circular_mean(angles)
+    rad_angles = deg2rad.(angles)
+    sum_sin = sum(sin.(rad_angles))
+    sum_cos = sum(cos.(rad_angles))
+    mean_rad = atan(sum_sin, sum_cos)
+    mean_deg = rad2deg(mean_rad)
+    return mean_deg
+end
+
+# Function to compute circular variance of angles
+function circular_variance(angles)
+    rad_angles = deg2rad.(angles)
+    sum_sin = sum(sin.(rad_angles))
+    sum_cos = sum(cos.(rad_angles))
+    R = sqrt(sum_sin^2 + sum_cos^2) / length(angles)
+    var = 1 - R
+    return var
+end
+
 function init_system(logging_interval)
     ff_dir = joinpath(dirname(pathof(Molly)), "..", "data", "force_fields")
     ff = MolecularForceField(joinpath.(ff_dir, ["ff99SBildn.xml", "tip3p_standard.xml"])...)
@@ -41,10 +73,8 @@ timesteps = [0.002 * 10^(x) for x in -2:0.1:1.0]
 fric = 5000.0u"ps^-1"
 temp = 310u"K" #[3.0 * 10^(x) for x in 0.0:0.1:3.0]
 pushfirst!(timesteps, 0.00002)
-traj_length = 1_000_000
+traj_length = 100
 logging_interval = 1
-phi_data_array = zeros((length(timesteps), div(traj_length, logging_interval) + 1))
-psi_data_array = zeros((length(timesteps), div(traj_length, logging_interval) + 1))
 timing_results = zeros(length(timesteps))
 mean_phi_increment = zeros(length(timesteps))
 mean_psi_increment = zeros(length(timesteps))
@@ -66,21 +96,19 @@ std_psi_angles = zeros(length(timesteps))
     )
 
     try
-        sys, _, _, _ = ConstrainedDynamicsSimulator.euler_maruyama_split_time!(sys, simulator, traj_length)
-        phi_values = values(sys.loggers.phi)
-        psi_values = values(sys.loggers.psi)
+        sys, _ = ConstrainedDynamicsSimulator.PVD2!(sys, simulator, traj_length)
+        phi_unwrapped = unwrap_angles(values(sys.loggers.phi))
+        psi_unwrapped = unwrap_angles(values(sys.loggers.psi))
         
         # Store observable data
-        phi_data_array[idx, :] = phi_values
-        psi_data_array[idx, :] = psi_values
-        mean_phi_angles[idx] = mean(phi_values)
-        mean_psi_angles[idx] = mean(psi_values)
-        std_phi_angles[idx] = std(phi_values)
-        std_psi_angles[idx] = std(psi_values)
-        mean_phi_increment[idx] = mean(abs.(diff(phi_values)))
-        mean_psi_increment[idx] = mean(abs.(diff(psi_values)))
-        mean_phi_curvature[idx] = mean(abs.(diff(diff(phi_values))))
-        mean_psi_curvature[idx] = mean(abs.(diff(diff(psi_values))))
+        mean_phi_angles[idx] = circular_mean(phi_unwrapped)
+        mean_psi_angles[idx] = circular_mean(psi_unwrapped)
+        std_phi_angles[idx] = sqrt(circular_variance(phi_unwrapped))
+        std_psi_angles[idx] = sqrt(circular_variance(psi_unwrapped))
+        mean_phi_increment[idx] = mean(abs.(diff(phi_unwrapped)))
+        mean_psi_increment[idx] = mean(abs.(diff(psi_unwrapped)))
+        mean_phi_curvature[idx] = mean(abs.(diff(diff(phi_unwrapped))))
+        mean_psi_curvature[idx] = mean(abs.(diff(diff(psi_unwrapped))))
         
         timing_results[idx] = (time_ns() - start_time) * 1e-9
     catch err
@@ -114,7 +142,7 @@ metadata = """
 # Number of Timesteps: $(length(timesteps))
 """
 
-open("./results/final/stepsize_scaling_EM_split_time_$(traj_length).csv", "w") do io
+open("./results/final/stepsize_scaling_PVD2_x_bar_$(traj_length).csv", "w") do io
     write(io, metadata)
     CSV.write(io, df; append=true, writeheader=true)
 end

@@ -7,7 +7,19 @@ using DataFrames
 using .Threads
 
 using Random
-Random.seed!(1)
+Random.seed!(3)
+
+# Define the unwrapping function
+function unwrap_angles(angles)
+    unwrapped = similar(angles)
+    unwrapped[1] = angles[1]
+    for i in 2:length(angles)
+        Δ = angles[i] - angles[i-1]
+        Δ_adj = mod(Δ + 180, 360) - 180
+        unwrapped[i] = unwrapped[i-1] + Δ_adj
+    end
+    return unwrapped
+end
 
 function init_system(logging_interval)
     ff_dir = joinpath(dirname(pathof(Molly)), "..", "data", "force_fields")
@@ -53,11 +65,11 @@ psi_data_array = zeros((length(temps), div(traj_length, logging_interval) + 1))
     simulator = ConstrainedDynamicsSimulator.CVConstrainedOverdampedLangevin(dt=timestep, T=temp, γ=fric, 
         φ_grid=ConstrainedDynamicsSimulator.Dihedrals.φ_grid, 
         φ_flat=ConstrainedDynamicsSimulator.Dihedrals.φ_flat)
-    ConstrainedDynamicsSimulator.PVD2!(sys, simulator, traj_length)
+    ConstrainedDynamicsSimulator.euler_maruyama!(sys, simulator, traj_length)
     
     # Store data in arrays
-    phi_data_array[idx, :] = values(sys.loggers.phi)
-    psi_data_array[idx, :] = values(sys.loggers.psi)
+    phi_data_array[idx, :] = unwrap_angles(values(sys.loggers.phi))
+    psi_data_array[idx, :] = unwrap_angles(values(sys.loggers.psi))
     
     # Create time points
     time_points = collect(0:logging_interval:traj_length) * timestep
@@ -74,7 +86,7 @@ psi_data_array = zeros((length(temps), div(traj_length, logging_interval) + 1))
     # Trajectory Length: $(traj_length) steps
     # Logging Interval: $(logging_interval)
     """
-    open("./results/trajectories/phi_PVD2_$(temp).csv", "w") do io
+    open("./results/trajectories/phi_EM_$(temp).csv", "w") do io
         write(io, phi_metadata)
         CSV.write(io, phi_df; append=true, writeheader=true)
     end
@@ -91,7 +103,7 @@ psi_data_array = zeros((length(temps), div(traj_length, logging_interval) + 1))
     # Trajectory Length: $(traj_length) steps
     # Logging Interval: $(logging_interval)
     """
-    open("./results/trajectories/psi_PVD2_$(temp).csv", "w") do io
+    open("./results/trajectories/psi_EM_$(temp).csv", "w") do io
         write(io, psi_metadata)
         CSV.write(io, psi_df; append=true, writeheader=true)
     end
