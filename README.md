@@ -7,7 +7,7 @@ This work presents the first application of the second-order accurate **Post-pro
 ### Constrained Overdamped Langevin Dynamics (COLD)
 To perform Blue Moon sampling, we need an ergodic sampler that respects the holonomic constraint. COLD is an ideal choice, described by the following stochastic differential equation (SDE) for a system with an isotropic mass matrix ($M=mI$):
 
-$$dQ = \frac{1}{m\gamma}(-\Pi(Q) \nabla V(Q) + \beta^{-1} \operatorname{div} (\Pi(Q))dt + \sqrt{\frac{2}{m\gamma \beta}}\Pi(Q)dW$$
+$$dQ = \frac{1}{m\gamma}(-\Pi(Q) \nabla V(Q) + \beta^{-1} div (\Pi(Q))dt + \sqrt{\frac{2}{m\gamma \beta}}\Pi(Q)dW$$
 
 Where:
 -   $Q$ represents the atomic coordinates.
