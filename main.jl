@@ -29,11 +29,11 @@ sys = System(
     implicit_solvent="gbn2",
 )
 
-temp = 300.0u"K"
+temp = 30.0u"K"
 timestep = 0.002u"ps"
 fric = 5000.0u"ps^-1"
 simulator = ConstrainedDynamicsSimulator.CVConstrainedOverdampedLangevin(dt=timestep, T=temp, γ=fric, φ_grid=ConstrainedDynamicsSimulator.Dihedrals.φ_grid, φ_flat=ConstrainedDynamicsSimulator.Dihedrals.φ_flat)
 
-ConstrainedDynamicsSimulator.PVD2!(sys, simulator, 2_000) # This will take a little while to run
+ConstrainedDynamicsSimulator.PVD2!(sys, simulator, 100_000, compute_ergodic_integral=true, quantity=ConstrainedDynamicsSimulator.Dihedrals.φ_mean_force) # This will take a little while to run
 
 
